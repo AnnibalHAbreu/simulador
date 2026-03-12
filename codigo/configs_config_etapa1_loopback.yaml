@@ -10,9 +10,9 @@
 #
 # VALORES ESPERADOS NO MEDIDOR (para conferência no PLC):
 #   PF (fases A/B/C):  0.92  → registrador U16 = 15073 (0.92 × 16384)
-#   I  (fases A/B/C):  5.0 A → registrador U16 = 1280  (5.0 × 256)
-#   V  (fases A/B/C):  7967 V → registrador U16 = 1019776 → overflow U16!
-#                       Ajustado para 62.24 V (7967/RTP com RTP=128 interno)
+#   I  (fases A/B/C):  2.5 A (sec TC) → registrador U16 = 640  (2.5 × 256)
+#   V  (fases A/B/C):  66.4 V (sec TP) → registrador U16 = 8499  (66.4 × 128)
+#   PLC reconstrói: V_prim = 66.4 × 120 = 7968 V, I_prim = 2.5 × 200 = 500 A
 #
 # COMO AVANÇAR PARA ETAPA 2:
 #   Mude "mode: loopback" para "mode: full" e reinicie o simulador.
@@ -25,11 +25,13 @@ simulation:
   v_ll_v: 380.0
   enable_logs: true
 
-  # Valores fixos do medidor no modo loopback
-  # (escolha valores que facilitem a verificação no PLC)
-  loopback_pf: 0.92          # PF das 3 fases (positivo = indutivo)
-  loopback_v_mt_ln_v: 7967.0 # tensão fase-neutro MT (13800/√3 ≈ 7967 V)
-  loopback_i_mt_a: 5.0       # corrente MT (A)
+  # Valores fixos do medidor no modo loopback (SECUNDÁRIO dos instrumentos)
+  # O PLC multiplica por RTP e RTC para obter grandezas primárias.
+  # TP 13800/115 V (RTP=120): V_sec_fase = 13800/(√3×120) ≈ 66.4 V → reg = 66.4×128 = 8499
+  # TC 200/5 A (RTC=200): I_sec = 5.0 A (fundo de escala) → reg = 5.0×256 = 1280
+  loopback_pf: 0.92            # PF das 3 fases (positivo = indutivo)
+  loopback_v_mt_ln_v: 66.4     # tensão fase-neutro no secundário do TP (V)
+  loopback_i_mt_a: 2.5         # corrente no secundário do TC (A)
 
   # Campos abaixo são ignorados no modo loopback, mas mantidos para
   # facilitar a transição para mode: full (basta mudar 1 linha)

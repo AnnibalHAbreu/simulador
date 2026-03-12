@@ -68,10 +68,10 @@ class SimulationConfig:
     events_file: Optional[str] = None
     events_poll_s: float = 2.0
 
-    # Loopback: valores fixos para o medidor no modo loopback
+    # Loopback: valores fixos para o medidor no modo loopback (SECUNDÁRIO)
     loopback_pf: float = 0.92
-    loopback_v_mt_ln_v: float = 7967.0   # 13800/√3
-    loopback_i_mt_a: float = 5.0
+    loopback_v_mt_ln_v: float = 66.4     # V_sec fase-neutro TP (13800/√3/120)
+    loopback_i_mt_a: float = 2.5         # I_sec TC (A)
 
 
 @dataclass

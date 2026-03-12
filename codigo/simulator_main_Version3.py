@@ -133,7 +133,7 @@ async def main_async(config_path: str):
     if mode == "loopback":
         log.info(
             "=== ETAPA 1: LOOPBACK — teste de comunicação Modbus ===\n"
-            "  Medidor: PF=%.2f, V=%.1f V, I=%.2f A (fixos)\n"
+            "  Medidor: PF=%.2f, V_sec=%.2f V, I_sec=%.3f A (fixos)\n"
             "  Inversores: aceitam FC16, logam setpoints recebidos\n"
             "  Simulação física: DESLIGADA",
             cfg.simulation.loopback_pf,

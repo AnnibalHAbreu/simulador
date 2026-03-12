@@ -90,29 +90,30 @@ simulation:
 ```
 
 ### 4.3 Valores fixos no medidor (para conferência)
-No modo loopback, o medidor retorna valores fixos e conhecidos, configuráveis no YAML:
+No modo loopback, o medidor retorna valores fixos e conhecidos no **secundário dos instrumentos** (como o medidor real faz). O PLC multiplica por RTP/RTC para obter grandezas primárias.
 
+Configuráveis no YAML:
 ```yaml
-loopback_pf: 0.92           # PF (positivo = indutivo)
-loopback_v_mt_ln_v: 7967.0  # tensão fase-neutro MT em V (13800/√3)
-loopback_i_mt_a: 5.0        # corrente MT em A
+loopback_pf: 0.92            # PF (positivo = indutivo)
+loopback_v_mt_ln_v: 66.4     # tensão fase-neutro secundário TP (V)
+loopback_i_mt_a: 2.5         # corrente secundário TC (A)
 ```
 
 **Valores U16 esperados nos registradores do medidor:**
 
-| Registrador | Grandeza | Valor físico | Codificação | Valor U16 esperado |
-|-------------|----------|--------------|-------------|--------------------|
-| 0x0099 | PF fase A | 0.92 | valor × 16384 | **15073** |
-| 0x009A | PF fase B | 0.92 | valor × 16384 | **15073** |
-| 0x009B | PF fase C | 0.92 | valor × 16384 | **15073** |
-| 0x00A0 | Ia | 5.0 A | valor × 256 | **1280** |
-| 0x00A1 | Ib | 5.0 A | valor × 256 | **1280** |
-| 0x00A2 | Ic | 5.0 A | valor × 256 | **1280** |
-| 0x00A4 | Ua | 7967.0 V | valor × 128 | **1019776** ⚠️ |
-| 0x00A5 | Ub | 7967.0 V | valor × 128 | **1019776** ⚠️ |
-| 0x00A6 | Uc | 7967.0 V | valor × 128 | **1019776** ⚠️ |
+| Registrador | Grandeza | Valor secundário | Codificação | U16 esperado | PLC reconstrói |
+|-------------|----------|-----------------|-------------|--------------|----------------|
+| 0x0099 | PF fase A | 0.92 | valor × 16384 | **15073** | 0.92 |
+| 0x009A | PF fase B | 0.92 | valor × 16384 | **15073** | 0.92 |
+| 0x009B | PF fase C | 0.92 | valor × 16384 | **15073** | 0.92 |
+| 0x00A0 | Ia | 2.5 A | valor × 256 | **640** | 2.5 × RTC = 500 A |
+| 0x00A1 | Ib | 2.5 A | valor × 256 | **640** | 2.5 × RTC = 500 A |
+| 0x00A2 | Ic | 2.5 A | valor × 256 | **640** | 2.5 × RTC = 500 A |
+| 0x00A4 | Ua | 66.4 V | valor × 128 | **8499** | 66.4 × RTP = 7968 V |
+| 0x00A5 | Ub | 66.4 V | valor × 128 | **8499** | 66.4 × RTP = 7968 V |
+| 0x00A6 | Uc | 66.4 V | valor × 128 | **8499** | 66.4 × RTP = 7968 V |
 
-> **⚠️ Atenção:** 7967 × 128 = 1.019.776, que excede o range U16 (0–65535). O valor será truncado para U16 (mod 65536), resultando em **954.240 mod 65536 = ?**. Isto é esperado se a codificação do medidor real usa a mesma escala — o PLC decodifica sabendo a relação do RTP. **Confirme com o manual do medidor real qual a escala de codificação para tensão MT.** Se a codificação for diferente, ajuste `loopback_v_mt_ln_v` no YAML para um valor que caiba em U16 (ex.: 62.2 V se for tensão no secundário do TP de 115 V).
+> Todos os valores cabem em U16 (0–65535). O PLC reconstrói as grandezas primárias aplicando RTP=120 e RTC=200.
 
 ### 4.4 Execução
 ```bash
@@ -123,7 +124,7 @@ python -m simulator.main --config configs/config.yaml
 O log mostrará:
 ```
 === ETAPA 1: LOOPBACK — teste de comunicação Modbus ===
-  Medidor: PF=0.92, V=7967.0 V, I=5.00 A (fixos)
+  Medidor: PF=0.92, V_sec=66.40 V, I_sec=2.500 A (fixos)
   Inversores: aceitam FC16, logam setpoints recebidos
   Simulação física: DESLIGADA
 ```
@@ -133,8 +134,9 @@ O log mostrará:
 **Teste 1 — Leitura do medidor (COM1):**
 - [ ] PLC lê slave 100, start 0x0099, qty 28 — sem erro de timeout
 - [ ] PF nos registradores 0x0099–0x009B = 15073 (ou o valor esperado)
-- [ ] Correntes nos registradores 0x00A0–0x00A2 = 1280
-- [ ] Tensões nos registradores 0x00A4–0x00A6 = valor esperado conforme escala
+- [ ] Correntes nos registradores 0x00A0–0x00A2 = 640 (2.5 A × 256)
+- [ ] Tensões nos registradores 0x00A4–0x00A6 = 8499 (66.4 V × 128)
+- [ ] PLC reconstrói: V = 66.4 × RTP = 7968 V, I = 2.5 × RTC = 500 A
 - [ ] Registradores reservados (3–6, 10, 14–27) = 0
 
 **Teste 2 — Escrita em inversor COM1:**
@@ -159,7 +161,7 @@ O log mostrará:
 | Timeout só em COM2 | COM2 não está na porta correta | Verificar `/dev/ttySC1` |
 | PF/I/V com valores errados | Offset de endereço (±1) | Verificar se PLC usa 0-based ou 1-based |
 | "Permission denied" | Usuário não está no grupo dialout | `sudo usermod -aG dialout $USER` |
-| Valores de tensão estranhos | Escala de codificação incompatível | Ajustar `loopback_v_mt_ln_v` |
+| V ou I com valores fora do esperado | RTP/RTC no YAML não correspondem ao PLC | Conferir relações de transformação |
 
 ---
 

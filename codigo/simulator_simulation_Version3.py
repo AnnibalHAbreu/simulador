@@ -121,14 +121,15 @@ class InverterState:
 @dataclass
 class MeterState:
     slave_id: int
-    # saídas para registradores (grandezas primárias MT)
+    # saídas para registradores — valores no SECUNDÁRIO dos instrumentos
+    # O PLC multiplica por RTP (tensão) e RTC (corrente) para obter primário
     pfa: float = 1.0
     pfb: float = 1.0
     pfc: float = 1.0
-    ia_a: float = 0.0
+    ia_a: float = 0.0    # corrente secundário TC (A)
     ib_a: float = 0.0
     ic_a: float = 0.0
-    ua_v: float = 0.0
+    ua_v: float = 0.0    # tensão secundário TP fase-neutro (V)
     ub_v: float = 0.0
     uc_v: float = 0.0
 
@@ -203,7 +204,14 @@ class PlantSimulation:
     # --- loopback ---
 
     def _init_loopback_meter(self) -> None:
-        """Preenche o medidor com valores fixos e conhecidos para teste Modbus."""
+        """
+        Preenche o medidor com valores fixos e conhecidos para teste Modbus.
+        Os valores de tensão e corrente são no SECUNDÁRIO dos instrumentos
+        (como o medidor real entrega). O PLC multiplica por RTP/RTC.
+
+        loopback_v_mt_ln_v: tensão fase-neutro no secundário do TP (V)
+        loopback_i_mt_a: corrente no secundário do TC (A)
+        """
         m = self.meter
         m.pfa = self.loopback_pf
         m.pfb = self.loopback_pf
@@ -215,7 +223,7 @@ class PlantSimulation:
         m.ub_v = self.loopback_v_mt_ln_v
         m.uc_v = self.loopback_v_mt_ln_v
         log.info(
-            "Modo LOOPBACK: medidor fixo PF=%.2f, V=%.1f V, I=%.2f A",
+            "Modo LOOPBACK: medidor fixo PF=%.2f, V_sec=%.2f V, I_sec=%.3f A",
             self.loopback_pf, self.loopback_v_mt_ln_v, self.loopback_i_mt_a,
         )
 
@@ -385,15 +393,41 @@ class PlantSimulation:
             self.meter.pfb = pf_signed
             self.meter.pfc = pf_signed
 
+            # Grandezas referidas ao SECUNDÁRIO dos instrumentos de medição.
+            # O PLC lê estes valores e multiplica por RTP/RTC para obter primário.
+            #
+            # Tensão: V_MT_fase = V_BT_fase × (V_MT_nom / V_BT_nom)
+            #         V_sec_fase = V_MT_fase / RTP
+            # Corrente: I_MT = S_PCC / (√3 · V_MT_LL)
+            #           I_sec = I_MT / (RTC / 5)  [TC típico x/5 A]
+            #           Simplificando: I_sec = I_MT * 5 / RTC
+            #           Porém a especificação diz "multiplicar por RTC" no PLC,
+            #           ou seja, reg = I_secundário, e I_primário = reg × RTC.
+            #           Então: I_sec = I_MT_primário / RTC  (se RTC = razão completa)
+            #           Mas RTC no YAML é a relação de transformação (ex: 200 para TC 200/5).
+            #           O medidor lê o secundário: I_sec = I_prim / (RTC/5) = I_prim * 5 / RTC
+            #           E o PLC faz: I_prim = reg_valor(A) × RTC  → ou seja, reg = I_prim / RTC
+            #
+            # Pela especificação: reg × (1/256) × RTC = I_primária
+            # Então: reg = I_primária × 256 / RTC
+            # Ou equivalentemente: o valor em A armazenado = I_primária / RTC
+
             v_mt_ln = v_pcc_ln * (self.v_mt_ll_v / self.v_ll_v) if self.v_ll_v > 0 else 0.0
             v_mt_ll = v_mt_ln * sqrt(3.0)
 
-            i_mt = (s_pcc * 1000.0) / (sqrt(3.0) * v_mt_ll) if v_mt_ll > 0 else 0.0
+            # Tensão no secundário do TP (V)
+            v_sec_ln = v_mt_ln / self.rtp if self.rtp > 0 else 0.0
 
-            self.meter.ia_a = i_mt
-            self.meter.ib_a = i_mt
-            self.meter.ic_a = i_mt
+            # Corrente primária MT (A)
+            i_mt_prim = (s_pcc * 1000.0) / (sqrt(3.0) * v_mt_ll) if v_mt_ll > 0 else 0.0
+            # Corrente no secundário do TC (A): I_prim / RTC
+            # (o PLC reconstrói: I_prim = valor_lido × RTC)
+            i_sec = i_mt_prim / self.rtc if self.rtc > 0 else 0.0
 
-            self.meter.ua_v = v_mt_ln
-            self.meter.ub_v = v_mt_ln
-            self.meter.uc_v = v_mt_ln
+            self.meter.ia_a = i_sec
+            self.meter.ib_a = i_sec
+            self.meter.ic_a = i_sec
+
+            self.meter.ua_v = v_sec_ln
+            self.meter.ub_v = v_sec_ln
+            self.meter.uc_v = v_sec_ln
