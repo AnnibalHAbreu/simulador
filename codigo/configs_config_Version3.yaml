@@ -1,0 +1,90 @@
+simulation:
+  tick_s: 0.01          # passo interno da simulação: 10 ms
+  control_cycle_s: 2.0  # ciclo de controle (referência, não usado internamente)
+  v_ll_v: 380.0         # tensão linha-linha BT (V)
+  enable_logs: true
+
+  # Perfis opcionais
+  u_profile_csv: "profiles/u_profile.csv"
+  load_profile_csv: "profiles/load_profile.csv"
+
+  # Defaults (usados se não houver CSV)
+  u_default: 1.0
+  load_p_kw: 50.0
+  load_q_kvar: 0.0
+
+  # Modelo de carga ZIP (premissa ANEEL para perdas técnicas)
+  # P_load(V) = P0 * [zip_p_Z*(V/V0)^2 + zip_p_I*(V/V0) + zip_p_P]
+  # Q_load(V) = Q0 * [zip_q_Z*(V/V0)^2 + zip_q_I*(V/V0) + zip_q_P]
+  zip_p_Z: 0.50   # 50% impedância constante (ativo)
+  zip_p_I: 0.00   # 0% corrente constante (ativo)
+  zip_p_P: 0.50   # 50% potência constante (ativo)
+  zip_q_Z: 0.00   # 0% impedância constante (reativo)
+  zip_q_I: 0.00   # 0% corrente constante (reativo)
+  zip_q_P: 1.00   # 100% potência constante (reativo)
+
+  # Equivalente de Thévenin da rede no PCC (lado BT, referido ao secundário do trafo)
+  # Vth = tensão de Thévenin LL (V) - tipicamente = v_ll_v em condição nominal
+  # Zth = R + jX por fase (ohm) - derivado do nível de curto-circuito
+  # Para Scc = 10 MVA em 380V: |Zth| = V²/Scc = 380²/10e6 = 0.01444 ohm
+  # Com X/R = 5: R = 0.00283, X = 0.01416
+  thevenin_vth_ll_v: 380.0
+  thevenin_r_ohm: 0.00283
+  thevenin_x_ohm: 0.01416
+
+  # Transformador e instrumentos de medição (MT)
+  # Tensão nominal MT (V LL)
+  v_mt_ll_v: 13800.0
+  # RTP: relação de transformação de potencial (ex: 120:1 para 13800/115)
+  rtp: 120.0
+  # RTC: relação de transformação de corrente (ex: 200 para TC 200/5 A)
+  rtc: 200.0
+
+  # Arquivo de eventos para injeção de falhas em tempo real (opcional)
+  events_file: "configs/events.json"
+  events_poll_s: 2.0
+
+com1:
+  serial:
+    device: "/dev/ttySC0"
+    baudrate: 9600
+    parity: "N"
+    stopbits: 1
+    bytesize: 8
+    timeout_s: 0.2
+
+  meter:
+    slave_id: 100
+    base_address: 0x0099
+    quantity_u16: 28
+
+  inverters:
+    - { slave_id: 101, p_nom_kw: 60, s_nom_kva: 60, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 102, p_nom_kw: 60, s_nom_kva: 60, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 103, p_nom_kw: 35, s_nom_kva: 35, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 104, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 105, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 106, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 107, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 108, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 109, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+
+com2:
+  serial:
+    device: "/dev/ttySC1"
+    baudrate: 9600
+    parity: "N"
+    stopbits: 1
+    bytesize: 8
+    timeout_s: 0.2
+
+  inverters:
+    - { slave_id: 201, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 202, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 203, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 204, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 205, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 206, p_nom_kw: 15, s_nom_kva: 15, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 207, p_nom_kw: 35, s_nom_kva: 35, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 208, p_nom_kw: 35, s_nom_kva: 35, tau_p_s: 1.0, tau_q_s: 1.0 }
+    - { slave_id: 209, p_nom_kw: 50, s_nom_kva: 50, tau_p_s: 1.0, tau_q_s: 1.0 }
