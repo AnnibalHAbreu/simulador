@@ -160,6 +160,10 @@ class PlantSimulation:
         rtc: float = 200.0,
         events_file: Optional[str] = None,
         events_poll_s: float = 2.0,
+        mode: str = "full",
+        loopback_pf: float = 0.92,
+        loopback_v_mt_ln_v: float = 7967.0,
+        loopback_i_mt_a: float = 5.0,
     ):
         self.inverters: Dict[int, InverterState] = {inv.slave_id: inv for inv in inverters}
         self.meter = meter
@@ -184,16 +188,50 @@ class PlantSimulation:
         self._events_last_poll_t: float = -1.0
         self._events_cache = EventsCache()
 
+        self.mode = mode
+        self.loopback_pf = loopback_pf
+        self.loopback_v_mt_ln_v = loopback_v_mt_ln_v
+        self.loopback_i_mt_a = loopback_i_mt_a
+
         self.t_s: float = 0.0
         self.v_pcc_ll_v: float = v_ll_v
+
+        # Em modo loopback, preencher medidor com valores fixos imediatamente
+        if self.mode == "loopback" and self.meter:
+            self._init_loopback_meter()
+
+    # --- loopback ---
+
+    def _init_loopback_meter(self) -> None:
+        """Preenche o medidor com valores fixos e conhecidos para teste Modbus."""
+        m = self.meter
+        m.pfa = self.loopback_pf
+        m.pfb = self.loopback_pf
+        m.pfc = self.loopback_pf
+        m.ia_a = self.loopback_i_mt_a
+        m.ib_a = self.loopback_i_mt_a
+        m.ic_a = self.loopback_i_mt_a
+        m.ua_v = self.loopback_v_mt_ln_v
+        m.ub_v = self.loopback_v_mt_ln_v
+        m.uc_v = self.loopback_v_mt_ln_v
+        log.info(
+            "Modo LOOPBACK: medidor fixo PF=%.2f, V=%.1f V, I=%.2f A",
+            self.loopback_pf, self.loopback_v_mt_ln_v, self.loopback_i_mt_a,
+        )
 
     # --- setpoints (chamados pelo callback Modbus) ---
 
     def set_inverter_setpoint_pct(self, slave_id: int, pct: float) -> None:
-        self.inverters[slave_id].p_ref_pct = sat(pct, 0.0, 100.0)
+        inv = self.inverters[slave_id]
+        inv.p_ref_pct = sat(pct, 0.0, 100.0)
+        if self.mode == "loopback":
+            log.info("LOOPBACK RX: inv %d → setpoint P = %.1f %%", slave_id, inv.p_ref_pct)
 
     def set_inverter_pf_raw(self, slave_id: int, raw: int) -> None:
-        self.inverters[slave_id].pf_cmd_raw = int(raw)
+        inv = self.inverters[slave_id]
+        inv.pf_cmd_raw = int(raw)
+        if self.mode == "loopback":
+            log.info("LOOPBACK RX: inv %d → PF raw = %d", slave_id, inv.pf_cmd_raw)
 
     # --- decodificação PF ---
 
@@ -235,7 +273,6 @@ class PlantSimulation:
             force_u={int(k): float(v) for k, v in data.get("force_u", {}).items()},
         )
 
-        # Aplicar freeze (acumula ao valor restante)
         for sid, secs in self._events_cache.freeze_s.items():
             if sid in self.inverters:
                 self.inverters[sid].frozen_s = max(self.inverters[sid].frozen_s, secs)
@@ -243,6 +280,12 @@ class PlantSimulation:
     # --- passo de simulação ---
 
     def step(self) -> None:
+        # Em modo loopback, apenas avança o tempo (medidor já está com valores fixos)
+        if self.mode == "loopback":
+            self.t_s += self.tick_s
+            return
+
+        # === Modo FULL: simulação completa ===
         self.t_s += self.tick_s
         t_int = int(self.t_s)
 
@@ -262,32 +305,28 @@ class PlantSimulation:
             else (self.load_p_kw_default, self.load_q_kvar_default)
         )
 
-        # --- snapshot atômico dos setpoints (item 4) ---
+        # --- snapshot atômico dos setpoints ---
         setpoints: Dict[int, Tuple[float, int]] = {}
         for sid, inv in self.inverters.items():
             setpoints[sid] = (inv.p_ref_pct, inv.pf_cmd_raw)
 
         # --- atualizar inversores ---
         for sid, inv in self.inverters.items():
-            # Disponibilidade: force_u individual ou u_global
             if sid in ev.force_u:
                 inv.u = sat(ev.force_u[sid], 0.0, 1.0)
             else:
                 inv.u = u_global
 
-            # Comunicação perdida: rampa a zero (5 s para perda total)
             inv.comms_drop = (sid in ev.drop_comms)
             if inv.comms_drop:
                 inv.p_ref_pct = max(0.0, inv.p_ref_pct - (self.tick_s / 5.0) * 100.0)
 
-            # Congelamento
             if inv.frozen_s > 0:
                 inv.frozen_s = max(0.0, inv.frozen_s - self.tick_s)
                 continue
 
             sp_pct, sp_pf_raw = setpoints[sid]
 
-            # α efetivo = Ts / τ (filtro 1ª ordem discreto)
             alpha_eff = self.tick_s / inv.tau_p_s if inv.tau_p_s > 0 else 1.0
             beta_eff = self.tick_s / inv.tau_q_s if inv.tau_q_s > 0 else 1.0
 
@@ -315,25 +354,20 @@ class PlantSimulation:
         p_gen = sum(inv.p_kw for inv in self.inverters.values())
         q_gen = sum(inv.q_kvar for inv in self.inverters.values())
 
-        # 1ª estimativa P/Q no PCC (com carga nominal, sem ZIP)
         p_pcc = load_p0_kw - p_gen
         q_pcc = load_q0_kvar - q_gen
 
-        # Tensão PCC via Thévenin (1ª iteração)
         self.v_pcc_ll_v = self.thevenin.v_pcc_ll(p_pcc, q_pcc)
 
-        # Carga ajustada por ZIP com tensão calculada
         load_p_kw, load_q_kvar = self.zip_load.evaluate(
             load_p0_kw, load_q0_kvar,
             self.v_pcc_ll_v, self.v_ll_v
         )
 
-        # P/Q finais no PCC
         p_pcc = load_p_kw - p_gen
         q_pcc = load_q_kvar - q_gen
         s_pcc = sqrt(p_pcc * p_pcc + q_pcc * q_pcc)
 
-        # 2ª iteração Thévenin (melhora convergência)
         self.v_pcc_ll_v = self.thevenin.v_pcc_ll(p_pcc, q_pcc)
 
         # --- atualizar medidor ---
@@ -344,9 +378,6 @@ class PlantSimulation:
 
             v_pcc_ln = self.v_pcc_ll_v / sqrt(3.0) if self.v_pcc_ll_v > 0 else 0.0
 
-            # PF com sinal (item 7):
-            # positivo = indutivo (Q_PCC >= 0, importação de reativos)
-            # negativo = capacitivo (Q_PCC < 0, exportação de reativos)
             pf_mag = abs(p_pcc) / s_pcc if s_pcc > 1e-9 else 1.0
             pf_signed = pf_mag if q_pcc >= 0 else -pf_mag
 
@@ -354,12 +385,9 @@ class PlantSimulation:
             self.meter.pfb = pf_signed
             self.meter.pfc = pf_signed
 
-            # Grandezas MT (trafo ideal, item 3)
-            # V_MT_fase = V_BT_fase × (V_MT_nom / V_BT_nom)
             v_mt_ln = v_pcc_ln * (self.v_mt_ll_v / self.v_ll_v) if self.v_ll_v > 0 else 0.0
             v_mt_ll = v_mt_ln * sqrt(3.0)
 
-            # I_MT = S_PCC / (√3 · V_MT_LL)
             i_mt = (s_pcc * 1000.0) / (sqrt(3.0) * v_mt_ll) if v_mt_ll > 0 else 0.0
 
             self.meter.ia_a = i_mt

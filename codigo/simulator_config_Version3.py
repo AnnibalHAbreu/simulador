@@ -22,8 +22,8 @@ class InverterConfig:
     slave_id: int
     p_nom_kw: float
     s_nom_kva: float
-    tau_p_s: float = 1.0   # constante de tempo P (s)
-    tau_q_s: float = 1.0   # constante de tempo Q (s)
+    tau_p_s: float = 1.0
+    tau_q_s: float = 1.0
 
 
 @dataclass
@@ -35,8 +35,9 @@ class MeterConfig:
 
 @dataclass
 class SimulationConfig:
-    tick_s: float = 0.01            # passo interno: 10 ms
-    control_cycle_s: float = 2.0    # ciclo de controle (referência)
+    mode: str = "full"              # "loopback" ou "full"
+    tick_s: float = 0.01
+    control_cycle_s: float = 2.0
     v_ll_v: float = 380.0
     load_profile_csv: Optional[str] = None
     load_p_kw: float = 50.0
@@ -45,7 +46,7 @@ class SimulationConfig:
     u_default: float = 1.0
     enable_logs: bool = True
 
-    # Modelo ZIP de carga (ANEEL)
+    # ZIP (ANEEL)
     zip_p_Z: float = 0.50
     zip_p_I: float = 0.00
     zip_p_P: float = 0.50
@@ -66,6 +67,11 @@ class SimulationConfig:
     # Eventos
     events_file: Optional[str] = None
     events_poll_s: float = 2.0
+
+    # Loopback: valores fixos para o medidor no modo loopback
+    loopback_pf: float = 0.92
+    loopback_v_mt_ln_v: float = 7967.0   # 13800/√3
+    loopback_i_mt_a: float = 5.0
 
 
 @dataclass
@@ -95,6 +101,7 @@ def load_config(path: str | Path) -> AppConfig:
 
     sim = data.get("simulation", {})
     simulation = SimulationConfig(
+        mode=str(sim.get("mode", "full")),
         tick_s=float(sim.get("tick_s", 0.01)),
         control_cycle_s=float(sim.get("control_cycle_s", 2.0)),
         v_ll_v=float(sim.get("v_ll_v", 380.0)),
@@ -122,6 +129,10 @@ def load_config(path: str | Path) -> AppConfig:
         # Events
         events_file=sim.get("events_file"),
         events_poll_s=float(sim.get("events_poll_s", 2.0)),
+        # Loopback
+        loopback_pf=float(sim.get("loopback_pf", 0.92)),
+        loopback_v_mt_ln_v=float(sim.get("loopback_v_mt_ln_v", 7967.0)),
+        loopback_i_mt_a=float(sim.get("loopback_i_mt_a", 5.0)),
     )
 
     def parse_serial(sd: Dict[str, Any]) -> SerialPortConfig:

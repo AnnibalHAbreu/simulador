@@ -30,7 +30,7 @@ async def simulation_loop(sim: PlantSimulation):
     """Loop de simulação a cada tick_s (10 ms). Detecta overrun."""
     tick = sim.tick_s
     next_t = time.monotonic()
-    overrun_threshold = 3 * tick  # 3 ticks de tolerância
+    overrun_threshold = 3 * tick
 
     while True:
         now = time.monotonic()
@@ -44,7 +44,6 @@ async def simulation_loop(sim: PlantSimulation):
                     "Overrun detectado: atraso=%.1f ms, descartando %d ticks",
                     lag * 1000.0, skipped
                 )
-                # Avança o tempo da simulação sem executar os steps perdidos
                 sim.t_s += skipped * tick
                 next_t = now
 
@@ -52,18 +51,29 @@ async def simulation_loop(sim: PlantSimulation):
         next_t += tick
 
 
+async def loopback_idle(sim: PlantSimulation):
+    """No modo loopback, apenas mantém o event loop vivo. Sem simulação."""
+    log.info("Modo LOOPBACK: simulação desligada, apenas servidores Modbus ativos.")
+    while True:
+        await asyncio.sleep(10.0)
+
+
 async def main_async(config_path: str):
     cfg = load_config(config_path)
     setup_logging(cfg.simulation.enable_logs)
 
-    # Perfis
+    mode = cfg.simulation.mode
+    if mode not in ("loopback", "full"):
+        raise ValueError(f"Modo inválido: '{mode}'. Use 'loopback' ou 'full'.")
+
+    # Perfis (ignorados no modo loopback, mas carregados se existirem)
     u_profile = (
         StepProfile.from_csv(cfg.simulation.u_profile_csv, "time_s", "u")
-        if cfg.simulation.u_profile_csv else None
+        if cfg.simulation.u_profile_csv and mode == "full" else None
     )
     load_profile = (
         LoadProfile.from_csv(cfg.simulation.load_profile_csv)
-        if cfg.simulation.load_profile_csv else None
+        if cfg.simulation.load_profile_csv and mode == "full" else None
     )
 
     # Inversores
@@ -82,14 +92,12 @@ async def main_async(config_path: str):
     # Medidor
     meter = MeterState(slave_id=cfg.com1.meter.slave_id) if cfg.com1.meter else None
 
-    # Thévenin
+    # Thévenin e ZIP (só usados no modo full, mas instanciados sempre)
     thevenin = TheveninModel(
         vth_ll_v=cfg.simulation.thevenin_vth_ll_v,
         r_ohm=cfg.simulation.thevenin_r_ohm,
         x_ohm=cfg.simulation.thevenin_x_ohm,
     )
-
-    # ZIP
     zip_load = ZipLoadModel(
         a_Z=cfg.simulation.zip_p_Z,
         a_I=cfg.simulation.zip_p_I,
@@ -116,13 +124,34 @@ async def main_async(config_path: str):
         rtc=cfg.simulation.rtc,
         events_file=cfg.simulation.events_file,
         events_poll_s=cfg.simulation.events_poll_s,
+        mode=mode,
+        loopback_pf=cfg.simulation.loopback_pf,
+        loopback_v_mt_ln_v=cfg.simulation.loopback_v_mt_ln_v,
+        loopback_i_mt_a=cfg.simulation.loopback_i_mt_a,
     )
 
-    log.info(
-        "Simulador V3 iniciado: tick=%.0f ms, inversores=%d, Thévenin R=%.5f X=%.5f ohm",
-        cfg.simulation.tick_s * 1000, len(all_inverters),
-        cfg.simulation.thevenin_r_ohm, cfg.simulation.thevenin_x_ohm,
-    )
+    if mode == "loopback":
+        log.info(
+            "=== ETAPA 1: LOOPBACK — teste de comunicação Modbus ===\n"
+            "  Medidor: PF=%.2f, V=%.1f V, I=%.2f A (fixos)\n"
+            "  Inversores: aceitam FC16, logam setpoints recebidos\n"
+            "  Simulação física: DESLIGADA",
+            cfg.simulation.loopback_pf,
+            cfg.simulation.loopback_v_mt_ln_v,
+            cfg.simulation.loopback_i_mt_a,
+        )
+    else:
+        log.info(
+            "=== ETAPA 2: FULL — simulação completa ===\n"
+            "  tick=%.0f ms, inversores=%d\n"
+            "  Thévenin R=%.5f X=%.5f ohm\n"
+            "  ZIP P: Z=%.0f%% I=%.0f%% P=%.0f%%\n"
+            "  ZIP Q: Z=%.0f%% I=%.0f%% P=%.0f%%",
+            cfg.simulation.tick_s * 1000, len(all_inverters),
+            cfg.simulation.thevenin_r_ohm, cfg.simulation.thevenin_x_ohm,
+            cfg.simulation.zip_p_Z * 100, cfg.simulation.zip_p_I * 100, cfg.simulation.zip_p_P * 100,
+            cfg.simulation.zip_q_Z * 100, cfg.simulation.zip_q_I * 100, cfg.simulation.zip_q_P * 100,
+        )
 
     srv1 = ModbusRtuPortServer(
         "COM1",
@@ -156,8 +185,11 @@ async def main_async(config_path: str):
         sim,
     )
 
+    # Escolher task de simulação conforme modo
+    sim_task = loopback_idle(sim) if mode == "loopback" else simulation_loop(sim)
+
     await asyncio.gather(
-        simulation_loop(sim),
+        sim_task,
         srv1.run(cfg.simulation.tick_s),
         srv2.run(cfg.simulation.tick_s),
     )
