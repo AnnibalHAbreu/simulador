@@ -1,11 +1,13 @@
 
 
 
-**Simulador de Usina Fotovoltaica**
+#**Simulador de Usina Fotovoltaica**
 
 Guia de Instalação e Uso — Version 3
 
-Raspberry Pi 4  ·  RS485 Waveshare HAT  ·  Modbus RTU  ·  18 inversores \+ 1 medidor
+Raspberry Pi 4  ou Windows  ·  RS485 Waveshare HAT  ·  Modbus RTU  ·  18 inversores \+ 1 medidor
+
+Ver distinção do ambiente para Raspberry x Windows no final do texto
 
 # **1  Visão Geral e Estratégia de Implantação**
 
