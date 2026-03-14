@@ -1,4 +1,4 @@
-# simulador
+# Descrição da instalação e funcionamento do simulador
 
 # Impacto do tick_s na simulação — Windows vs RPi
 
