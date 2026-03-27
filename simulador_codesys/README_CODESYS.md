@@ -60,8 +60,8 @@ A task chama `PRG_Main` a cada ciclo. O `FB_Simulator` avança `g_T_s` em `TICK_
 | Slave ID | 100 |
 | Função suportada | FC03 (Read Holding Registers) |
 | Endereço base | 153 (= 0x0099 decimal) |
-| Quantidade | 28 registradores UINT |
-| Mapeamento | `MW_Meter[0..27]` (GVL_SimState) |
+| Quantidade | 14 registradores UINT |
+| Mapeamento | `MW_Meter[0..13]` (GVL_SimState) |
 
 O driver lê `MW_Meter[]` e responde ao master sem intervenção do programa.  
 O `FB_Simulator` atualiza `MW_Meter[]` a cada ciclo de 50 ms.
