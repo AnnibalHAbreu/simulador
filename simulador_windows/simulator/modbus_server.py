@@ -156,6 +156,11 @@ class ModbusRtuPortServer:
             slaves[self.layout.meter_slave_id] = self._build_meter_slave(
                 self.layout.meter_slave_id
             )
+        self._meter_slave = (
+            slaves.get(self.layout.meter_slave_id)
+            if self.layout.meter_slave_id is not None
+            else None
+        )
         return ModbusServerContext(slaves=slaves, single=False)
 
     # -----------------------------------------------------------------------
@@ -167,7 +172,9 @@ class ModbusRtuPortServer:
             return
 
         meter: MeterState = self.sim.meter
-        slave = self.context.slaves[self.layout.meter_slave_id]
+        slave = self._meter_slave
+        if slave is None:
+            return
         base = self.layout.meter_base_addr
         qty = self.layout.meter_quantity_u16
 
