@@ -156,6 +156,7 @@ class ModbusRtuPortServer:
             slaves[self.layout.meter_slave_id] = self._build_meter_slave(
                 self.layout.meter_slave_id
             )
+        self._slaves_dict = slaves
         self._meter_slave = (
             slaves.get(self.layout.meter_slave_id)
             if self.layout.meter_slave_id is not None
@@ -227,7 +228,23 @@ class ModbusRtuPortServer:
                 self._update_meter_registers()
                 await asyncio.sleep(update_interval)
 
+        async def _inverter_logger():
+            while True:
+                await asyncio.sleep(5.0)
+                lines = [f"--- [{self.name}] Inversores ---"]
+                for sid in self.layout.inverter_slave_ids:
+                    slave = self._slaves_dict.get(sid)
+                    if slave is None:
+                        continue
+                    p_pct  = slave.getValues(3, 256, count=1)[0]
+                    pf_raw = slave.getValues(3, 257, count=1)[0]
+                    lines.append(
+                        f"  Slave {sid:3d} | %P = {p_pct:3d} | PF raw = {pf_raw:3d}"
+                    )
+                log.info("\n".join(lines))
+
         asyncio.create_task(_meter_updater())
+        asyncio.create_task(_inverter_logger())
 
         log.info(
             "Iniciando servidor Modbus RTU '%s' em %s (baud=%d)",
