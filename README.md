@@ -124,9 +124,9 @@ No modo loopback o medidor retorna grandezas no secundário dos instrumentos. O 
 | 0x009A | PF fase B | 0,92 | val × 16384 | 15073 | PF \= 0,92 |
 | 0x009B | PF fase C | 0,92 | val × 16384 | 15073 | PF \= 0,92 |
 | 0x009C–9F | Reservado | — | — | 0 | — |
-| 0x00A0 | Ia | 2,5 A | val × 256 | 640 | 2,5 × 200 \= 500 A |
-| 0x00A1 | Ib | 2,5 A | val × 256 | 640 | 2,5 × 200 \= 500 A |
-| 0x00A2 | Ic | 2,5 A | val × 256 | 640 | 2,5 × 200 \= 500 A |
+| 0x00A0 | Ia | 2,5 A | val × 256 | 640 | 2,5 × 40 \= 200 A |
+| 0x00A1 | Ib | 2,5 A | val × 256 | 640 | 2,5 × 40 \= 200 A |
+| 0x00A2 | Ic | 2,5 A | val × 256 | 640 | 2,5 × 40 \= 200 A |
 | 0x00A3 | Reservado | — | — | 0 | — |
 | 0x00A4 | Ua (fn) | 66,4 V | val × 128 | 8499 | 66,4 × 120 \= 7968 V |
 | 0x00A5 | Ub (fn) | 66,4 V | val × 128 | 8499 | 66,4 × 120 \= 7968 V |
